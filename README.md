@@ -1,0 +1,2 @@
+This project is for understanding the lexer and interpreter.
+Lexer is the one which parses the given text in to tokens. It doesn't know the semantic relationship between tokens. Interpreter contains the grammar, which is the set of rules built by programmers, for parsing the text according to the rules. Interpreter asks lexer for the tokens according to the grammar rules, if there is any discrepency between the grammar rules and the tokens that it receives interpreter throws an error saying that the text doesn't follow the grammar that it has knowledge on.
