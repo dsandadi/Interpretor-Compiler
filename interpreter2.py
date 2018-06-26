@@ -1,11 +1,21 @@
+######################  SIMPLE PASCAL INTERPRETER ############################
+
 # This is a basic interpreter that does Multiplication, division for all integers. This program is just
 #  for understanding how lexer and interpreter works on a high level view.
 # This program uses lexer to parse the text and spit out the tokens which in turn are used by interpreter which knows
 # the grammar and makes sense out of the tokens that it receives.and interpreter
 # Part 5 added addition and substraction and operator precedence and association.
 
+# The modules of the program are lexer, parser, interpreter.
+# Lexer converts the text in to tokens and passes it on to the parser.
+# Parser up on receiving these tokens builds the abstract syntax tree(AST).
+# This Abstract Syntax Tree is different from the parse tree. Parser feeds the
+# AST to the interpreter which makes sense out of it and does some calculation.
+
+
 # Token is something that can't be broken apart into pieces.
-INTEGER, MUL, DIV, EOF, PLUS, MINUS = ('INTEGER', 'MUL', 'DIV', 'EOF', 'PLUS', 'MINUS')
+INTEGER, MUL, DIV, EOF, PLUS, MINUS, LPAREN, RPAREN = ('INTEGER', 'MUL', 'DIV',
+                                    'EOF', 'PLUS', 'MINUS', 'LPAREN', 'RPAREN')
 
 
 class Token:
@@ -73,19 +83,53 @@ class Lexer:
             if self.current_char == '-':
                 self.advance()
                 return Token(MINUS, '-')
-
+            if self.current_char == '(':
+                self.advance()
+                return Token(LPAREN, '(')
+            if self.current_char == ')':
+                self.advance()
+                return Token(RPAREN, ')')
             # If current char is none of the above it means the current
             # character is not in the grammer defined.
             # Therefore, it makes sense to throw an error.
             self.error()
         return Token(EOF, None)
-# The above completes the lexer code which helps in retrieving the tokens from
+
+###
+# Parser code.
+####
+
+
+# Data structure for representing the abstract syntax tree.
+class AST:
+    pass
+
+# This datastructure holds binary operators, like addition, substraction,
+# multiplication.
+class BinOp(AST):
+        def __init__(self, left, op, right):
+            self.left = left
+            self.right = right
+            # This holds the token for binary operator.
+            self.token = self.op = op
+
+
+# This data structure holds the integer number for AST.
+class Num(AST):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value
+
+# The above is the lexer code which helps in retrieving the tokens from
 # the sentence.
 # The interpreter module communicates with the lexer module to retrieve the
 # next token from the sentence self.
+# This class represents the parser, which takes in tokens from the lexer. This
+# Abstract syntax tree is fed to the interpreter which analyzes the tree to get
+# the proper meaning out of it.
 
 
-class Interpreter:
+class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
         self.current_token = lexer.get_nextToken()
@@ -103,53 +147,108 @@ class Interpreter:
 
     # Defining the term which is part of an expression.
     def term(self):
-        result = self.factor()
+        node = self.factor()
         while self.current_token.type in (MUL, DIV):
             token = self.current_token
             if(token.type == MUL):
                 self.eat(MUL)
-                result *= self.factor()
             if(token.type == DIV):
                 self.eat(DIV)
-                result /= self.factor()
-        return result
+            node = BinOp(left=node, op=token, right=self.factor())
+        return node
 
     # This method defines a factor which is a non terminating token.
     def factor(self):
         token = self.current_token
-        self.eat(INTEGER)
-        return token.value
+        if token.type == INTEGER:
+            self.eat(INTEGER)
+            return Num(token)
+        elif token.type == LPAREN:
+            self.eat(LPAREN)
+            node = self.expr()
+            self.eat(RPAREN)
+            return node
 
-    # This method defines an expression which is a non terminatin token.
+    # This method defines an expression which is a non terminating token.
     # Grammar.
     # Order
     # expr = term ((PLUS/MINUS)term)*
     # fact = Integer.
     def expr(self):
-        result = self.term()
+        node = self.term()
         while self.current_token.type in (PLUS, MINUS):
             token = self.current_token
             if(token.type == PLUS):
                 self.eat(PLUS)
-                result += self.term()
             if(token.type == MINUS):
                 self.eat(MINUS)
-                result -= self.term()
-        return result
+            node = BinOp(left=node, op=token, right=self.term())
+        return node
+
+# parse method for the parser that parses the text in to AST.
+    def parse(self):
+        return self.expr()
+
+
+###
+# Interpreter: The code for the interpreter.
+# input : AST
+# output : value of the syntax tree.
+###
+class NodeVisitor:
+    def visit(self, node):
+        method_name = 'visit_' + type(node).__name__
+        visitor = getattr(self, method_name, self.generic_visit)
+        return visitor(node)
+
+    def generic_visit(self, node):
+        raise Exception('No visit_{} method'.format(type(node).__name__))
+
+
+# Interpreter
+class Interpreter(NodeVisitor):
+    def __init__(self, parser):
+        self.parser = parser
+
+# method for visiting the binary operator node.
+    def visit_BinOp(self, node):
+        # The commented code is for spitting out the preorder and postorder
+        # notation of the expression.
+        # left_val = self.visit(node.left)
+        # right_val = self.visit(node.right)
+        # return "{} {}{}".format(node.op.type, left_val, right_val)
+        if node.op.type == PLUS:
+            return self.visit(node.left) + self.visit(node.right)
+        if node.op.type == MINUS:
+            return self.visit(node.left) - self.visit(node.right)
+        if node.op.type == MUL:
+            return self.visit(node.left) * self.visit(node.right)
+        if node.op.type == DIV:
+            return self.visit(node.left)/self.visit(node.right)
+
+# method for visiting the integer numbers.
+    def visit_Num(self, node):
+        return node.value
+
+# method for interpreter.
+    def interpret(self):
+        tree = self.parser.parse()
+        return self.visit(tree)
 
 
 # Driver of the program.
 def main():
     while True:
         try:
-            text = input('calc>')
+            text = input('spi>')
         except EOFError:
             break
         if not text:
             continue
         lexer = Lexer(text)
-        interpreter = Interpreter(lexer)
-        result = interpreter.expr()
+        parser = Parser(lexer)
+        interpreter = Interpreter(parser)
+        result = interpreter.interpret()
         print(result)
     # Boiler plate code.
 
