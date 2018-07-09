@@ -2,8 +2,9 @@
 
 # This is a basic interpreter that does Multiplication, division for all integers. This program is just
 #  for understanding how lexer and interpreter works on a high level view.
-# This program uses lexer to parse the text and spit out the tokens which in turn are used by interpreter which knows
-# the grammar and makes sense out of the tokens that it receives.and interpreter
+# This program uses lexer to parse the text and spit out the tokens which
+# in turn are used by interpreter which knows the grammar
+# and makes sense out of the tokens that it receives.and interpreter
 # Part 5 added addition and substraction and operator precedence and association.
 
 # The modules of the program are lexer, parser, interpreter.
@@ -14,10 +15,11 @@
 
 
 # Token is something that can't be broken apart into pieces.
-INTEGER, MUL, DIV, EOF, PLUS, MINUS, LPAREN, RPAREN = ('INTEGER', 'MUL', 'DIV',
-                                    'EOF', 'PLUS', 'MINUS', 'LPAREN', 'RPAREN')
+INTEGER, MUL, DIV, EOF, PLUS, MINUS, LPAREN, RPAREN, BEGIN, END, DOT, ID, ASSIGN, SEMI, PRINT = ('INTEGER', 'MUL', 'DIV',
+                                    'EOF', 'PLUS', 'MINUS', 'LPAREN', 'RPAREN', 'BEGIN', 'END', 'DOT', 'ID', 'ASSIGN', 'SEMI', 'PRINT')
 
 
+# This is the datastructure for holding the various tokens.
 class Token:
     def __init__(self, type, value):
         self.type = type
@@ -30,9 +32,18 @@ class Token:
         return self.__str__()
 
 
+# Set of reserverd keywords for identifiers.
+RESERVED_KEYWORDS = {
+    'BEGIN': Token('BEGIN', 'BEGIN'),
+    'END': Token('END', 'END'),
+    'PRINT': Token('PRINT', 'PRINT')
+    }
+
+
 # Lexer is the class to that retrieves the sentence and parses the sentence and
 # sends the tokens with respective value to the interpreter.
 class Lexer:
+
     # It gets the tokens from the sentense by parsing the sentenceself.
     def __init__(self, text):
         self.text = text
@@ -64,8 +75,30 @@ class Lexer:
             self.advance()
         return int(result)
 
+# Method for peeking the next character used for assign statements.
+    def peek(self):
+        peek_pos = self.pos + 1
+        if peek_pos > len(self.text) - 1:
+            return None
+        else:
+            return self.text[peek_pos]
+
+# Method for returning the token relating to the Identifier.abs
+    def _id(self):
+        result = ''
+        while self.current_char is not None and self.current_char.isalnum():
+            result += self.current_char
+            self.advance()
+        # Retrieving the token from reserver keywords or creating a new
+        # identifier incase it is not in the reserved keywords.
+        token = RESERVED_KEYWORDS.get(result, Token(ID, result))
+        return token
+
+# Returns the next token
     def get_nextToken(self):
         while self.current_char is not None:
+            if self.current_char.isalpha():
+                return self._id()
             if self.current_char.isspace():
                 self.skip_whitespace()
                 continue
@@ -89,6 +122,16 @@ class Lexer:
             if self.current_char == ')':
                 self.advance()
                 return Token(RPAREN, ')')
+            if self.current_char == ':' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(ASSIGN, ':=')
+            if self.current_char == ';':
+                self.advance()
+                return Token(SEMI, ';')
+            if self.current_char == '.':
+                self.advance()
+                return Token(DOT, '.')
             # If current char is none of the above it means the current
             # character is not in the grammer defined.
             # Therefore, it makes sense to throw an error.
@@ -104,6 +147,7 @@ class Lexer:
 class AST:
     pass
 
+
 # This datastructure holds binary operators, like addition, substraction,
 # multiplication.
 class BinOp(AST):
@@ -114,21 +158,55 @@ class BinOp(AST):
             self.token = self.op = op
 
 
+# This datastructure for holding unary operator, like +, -.
+class UnaryOp(AST):
+    def __init__(self, op, expr):
+        self.token = op
+        self.expr = expr
+
+
 # This data structure holds the integer number for AST.
 class Num(AST):
+    def __init__(self, token):
+        self.token = self.op = token
+        self.value = token.value
+
+
+# This datastructure holds the comound statement. This compound statement has
+# list of children which are statement list.
+class Compound(AST):
+    def __init__(self):
+        self.children = []
+
+
+# This datastructure holds the assign statement.
+class Assign(AST):
+    def __init__(self, left, op, right):
+        self.left = left
+        self.token = self.op = op
+        self.right = right
+
+
+# This datastructure holds the variable.
+class Var(AST):
     def __init__(self, token):
         self.token = token
         self.value = token.value
 
+
+# This datastructure for holding the empty variable.
+class NoOp(AST):
+    pass
+
 # The above is the lexer code which helps in retrieving the tokens from
 # the sentence.
+
+
 # The interpreter module communicates with the lexer module to retrieve the
 # next token from the sentence self.
 # This class represents the parser, which takes in tokens from the lexer. This
 # Abstract syntax tree is fed to the interpreter which analyzes the tree to get
 # the proper meaning out of it.
-
-
 class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
@@ -140,6 +218,7 @@ class Parser:
     # compare the current token with the passed token if it matches then
     # advance the current token.
     def eat(self, token_type):
+        print(self.current_token.type, token_type)
         if self.current_token.type == token_type:
             self.current_token = self.lexer.get_nextToken()
         else:
@@ -160,6 +239,14 @@ class Parser:
     # This method defines a factor which is a non terminating token.
     def factor(self):
         token = self.current_token
+        if token.type == PLUS:
+            self.eat(PLUS)
+            node = UnaryOp(token, self.factor())
+            return node
+        if token.type == MINUS:
+            self.eat(MINUS)
+            node = UnaryOp(token, self.factor())
+            return node
         if token.type == INTEGER:
             self.eat(INTEGER)
             return Num(token)
@@ -167,6 +254,9 @@ class Parser:
             self.eat(LPAREN)
             node = self.expr()
             self.eat(RPAREN)
+            return node
+        else:
+            node = self.variable()
             return node
 
     # This method defines an expression which is a non terminating token.
@@ -185,9 +275,70 @@ class Parser:
             node = BinOp(left=node, op=token, right=self.term())
         return node
 
-# parse method for the parser that parses the text in to AST.
+    # This method returns the compound statement node.
+    def compound_statement(self):
+        '''compound_statement : BEGIN statement_list END'''
+        self.eat(BEGIN)
+        nodes = self.statement_list()
+        self.eat(END)
+        root = Compound()
+        for node in nodes:
+            root.children.append(node)
+        return root
+
+    # This method returns the list of statements that is in the form of
+    # list of nodes.
+    def statement_list(self):
+        node = self.statement()
+        results = [node]
+        while self.current_token.type == SEMI:
+            self.eat(SEMI)
+            results.append(self.statement())
+        # **didn't check if current token type is ID**
+        return results
+
+    # This method returns the statement
+    '''Statement : compound_statement| assignement_statement | empty'''
+
+    def assignement_statement(self):
+        if(self.current_token.value == 'PRINT'):
+            self.eat
+        left = self.variable()
+        token = self.current_token
+        self.eat(ASSIGN)
+        right = self.expr()
+        node = Assign(left, token, right)
+        return node
+
+    # This method returns the statement node which is part of the grammer.
+    def statement(self):
+        if self.current_token.type == BEGIN:
+            node = self.compound_statement()
+        elif self.current_token.type == ID:
+            node = self.assignement_statement()
+        else:
+            node = self.empty()
+        return node
+
+    # This method returns the variable/identifier related to a value.
+    def variable(self):
+        node = Var(self.current_token)
+        self.eat(ID)
+        return node
+
+    def empty(self):
+        '''An empty production.'''
+        return NoOp()
+    # This returns the main node which is the entry point in to the
+    # abstarct syntax tree.
+    def program(self):
+        node = self.compound_statement()
+        self.eat(DOT)
+        return node
+
+    # parse method for the parser that parses the text in to AST.
     def parse(self):
-        return self.expr()
+        return self.program()
 
 
 ###
@@ -209,6 +360,7 @@ class NodeVisitor:
 class Interpreter(NodeVisitor):
     def __init__(self, parser):
         self.parser = parser
+        self.GLOBAL_SCOPE = {}
 
 # method for visiting the binary operator node.
     def visit_BinOp(self, node):
@@ -230,6 +382,41 @@ class Interpreter(NodeVisitor):
     def visit_Num(self, node):
         return node.value
 
+# method for visiting unary operator.
+    def visit_UnaryOp(self, node):
+        op = node.token.type
+        if op == PLUS:
+            return +self.visit(node.expr)
+        if op == MINUS:
+            return -self.visit(node.expr)
+
+# method for visiting compound statements.
+    def visit_Compound(self, node):
+        for child in node.children:
+            self.visit(child)
+
+# method for visiting the empty operator.
+    def visit_NoOp(self, node):
+        pass
+
+# This method for the assignment operator to work.
+# Theglobal symbol table stores the all variable names and their values.
+# When a request for a variable comes up the value of the variable is looked up
+# in the symbol table. If the key is not found in the symbol table error is
+# thrown. Essentially this symbol table is implemented by using the dictionary
+# datastructure of Python.
+    def visit_Assign(self, node):
+        var_name = node.left.value
+        self.GLOBAL_SCOPE[var_name] = self.visit(node.right)
+
+    def visit_Var(self, node):
+        var_name = node.value
+        val = self.GLOBAL_SCOPE.get(var_name)
+        if val is not None:
+            return val
+        else:
+            raise NameError(repr(var_name))
+
 # method for interpreter.
     def interpret(self):
         tree = self.parser.parse()
@@ -238,18 +425,37 @@ class Interpreter(NodeVisitor):
 
 # Driver of the program.
 def main():
+    #while True:
+    text = ""
     while True:
-        try:
-            text = input('spi>')
-        except EOFError:
-            break
-        if not text:
+        command = input("sand>")
+        text = ""
+        if(command == 'exit'):
+            exit(0)
+        vars = command.split(" ")
+        program_name = vars[0]
+        fileName = vars[1]
+        if(program_name != "sand"):
+            print(program_name, "doesn't exist")
             continue
+        # try:
+        file_handler = open(fileName)
+        for line in file_handler:
+            text += line
+        #except EOFError:
+        #    break
+        #if not text:
+            #break
+        print("*******************")
+        print('Text from the file :')
+        print(text)
+        print("*******************")
         lexer = Lexer(text)
         parser = Parser(lexer)
         interpreter = Interpreter(parser)
         result = interpreter.interpret()
-        print(result)
+        print("*******************")
+        print("Global scope variable", interpreter.GLOBAL_SCOPE)
     # Boiler plate code.
 
 
