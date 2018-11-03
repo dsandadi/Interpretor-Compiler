@@ -15,8 +15,8 @@
 
 
 # Token is something that can't be broken apart into pieces.
-INTEGER, MUL, DIV, EOF, PLUS, MINUS, LPAREN, RPAREN, BEGIN, END, DOT, ID, ASSIGN, SEMI, PRINT = ('INTEGER', 'MUL', 'DIV',
-                                    'EOF', 'PLUS', 'MINUS', 'LPAREN', 'RPAREN', 'BEGIN', 'END', 'DOT', 'ID', 'ASSIGN', 'SEMI', 'PRINT')
+INTEGER, MUL, DIV, EOF, PLUS, MINUS, LPAREN, RPAREN, BEGIN, END, DOT, ID, ASSIGN, SEMI, PROGRAM, VAR, COLON, COMMA, REAL, INTEGER_CONST, REAL_CONST, INTEGER_DIV, FLOAT_DIV = ('INTEGER', 'MUL', 'DIV',
+                                    'EOF', 'PLUS', 'MINUS', 'LPAREN', 'RPAREN', 'BEGIN', 'END', 'DOT', 'ID', 'ASSIGN', 'SEMI','PROGRAM', 'VAR', 'COLON', 'COMMA', 'REAL', 'INTEGR_CONST', 'REAL_CONST','INTEGER_DIV', 'FLOAT_DIV')
 
 
 # This is the datastructure for holding the various tokens.
@@ -32,11 +32,20 @@ class Token:
         return self.__str__()
 
 
-# Set of reserverd keywords for identifiers.
+# Set of reserverd keywords for identifiers. These are the set of keywords used
+# by the program. These are predefined so that any program doesn't use these
+# reserved keywords as their variable namesself.abs
+# The trick is to identify which keywords are used in your program and put them
+# in the reserverd keywords variable.
 RESERVED_KEYWORDS = {
+    'PROGRAM': Token('PROGRAM','PROGRAM'),
+    'VAR': Token('VAR', 'VAR'),
+    'DIV': Token('INTEGER_DIV', 'DIV'),
+    'INTEGER': Token('INTEGER', 'INTEGER'),
+    'REAL': Token('REAL', 'REAL'),
     'BEGIN': Token('BEGIN', 'BEGIN'),
     'END': Token('END', 'END'),
-    'PRINT': Token('PRINT', 'PRINT')
+    #'PRINT': Token('PRINT', 'PRINT')
     }
 
 
@@ -49,6 +58,13 @@ class Lexer:
         self.text = text
         self.pos = 0
         self.current_char = self.text[self.pos]
+
+    # Skip comments method to skip the comments from the pascal program. comments
+    # are enclosed inside the curly brackets.
+    def skip_comment(self):
+        while(self.current_char != '}'):
+            self.advance()
+        self.advance()
 
     def error(self):
         raise Exception("Invalid Character")
@@ -67,13 +83,22 @@ class Lexer:
         while self.current_char is not None and self.current_char.isspace():
             self.advance()
 
-    # extracts the integer represented by the current token.
-    def integer(self):
+    #This method returns the number(may be real or integer) from the string.
+    # getNexttoken method from the lexer calls this method to retrieve the number.
+    def number(self):
         result = ''
         while self.current_char is not None and self.text[self.pos].isdigit():
             result += self.current_char
             self.advance()
-        return int(result)
+        if(self.current_char == '.'):
+            result += self.current_char
+            self.advance()
+            while(self.current_char is not None and self.current_char.isdigit()):
+                result += self.current_char
+                self.advance()
+            return Token(REAL_CONST, float(result))
+        else:
+            return Token(INTEGER_CONST, int(result))
 
 # Method for peeking the next character used for assign statements.
     def peek(self):
@@ -97,41 +122,70 @@ class Lexer:
 # Returns the next token
     def get_nextToken(self):
         while self.current_char is not None:
+            # returning the identifier[like begin and end] of the program.
             if self.current_char.isalpha():
                 return self._id()
             if self.current_char.isspace():
                 self.skip_whitespace()
                 continue
+            # returning the number token of the program.
             if self.current_char.isdigit():
-                return Token(INTEGER, self.integer())
+                return self.number()
+            # returning the binary operators of the program.
             if self.current_char == '*':
                 self.advance()
                 return Token(MUL, '*')
             if self.current_char == '/':
                 self.advance()
-                return Token(DIV, '/')
+                return Token(FLOAT_DIV, '/')
             if self.current_char == '+':
                 self.advance()
                 return Token(PLUS, '+')
             if self.current_char == '-':
                 self.advance()
                 return Token(MINUS, '-')
+            # returning the left and right paranthesis of the program.
+            # This is for the operator precedence.
             if self.current_char == '(':
                 self.advance()
                 return Token(LPAREN, '(')
             if self.current_char == ')':
                 self.advance()
                 return Token(RPAREN, ')')
+            # returning the assignment token for the program.
             if self.current_char == ':' and self.peek() == '=':
                 self.advance()
                 self.advance()
                 return Token(ASSIGN, ':=')
+            if(self.current_char == ':'):
+                self.advance()
+                return Token(COLON, ':')
+            # returning the semicolon token which is the seperator
+            # the each statements.
             if self.current_char == ';':
                 self.advance()
                 return Token(SEMI, ';')
+            # returning the dot token which marks the end of the program.
             if self.current_char == '.':
                 self.advance()
                 return Token(DOT, '.')
+            # returning the comment part of the program which is a comment token.
+            # This method doesn't return any token because the parser doesn't
+            # require any token for the comment.Moreover, when the parser asks
+            # for the next token the lexer should spit out any token other than
+            # comment token(Because parser should build the abstract syntax tree.)
+            if self.current_char == '{':
+                self.advance()
+                self.skip_comment()
+                continue
+            # returning the comma token of the program.
+            if self.current_char == ',':
+                self.advance()
+                return Token(COMMA, ',')
+            # returning float division operator token.
+            if self.current_char == '/':
+                self.advance()
+                return Token(FLOAT_DIV, '/')
             # If current char is none of the above it means the current
             # character is not in the grammer defined.
             # Therefore, it makes sense to throw an error.
@@ -198,15 +252,44 @@ class Var(AST):
 class NoOp(AST):
     pass
 
+
+# This is the top node that contains the blocks.
+# program : PROGRAM VARIABLE SEMI block DOT.
+class Program(AST):
+    def __init__(self, name, block):
+        self.name = name
+        self.block = block
+
+# This is the block node of the program.
+# BLOCK: declarations compoundstatement
+class Block(AST):
+    def __init__(self, declarations, compound_statement):
+        self.declarations = declarations
+        self.compound_statement = compound_statement
+
+
+# Node representing the varDecl token.
+class VarDecl(AST):
+    def __init__(self, var_node, type_node):
+        self.var_node = var_node
+        self.type_node = type_node
+
+
+# Node representing the type node.
+class Type(AST):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value
+
 # The above is the lexer code which helps in retrieving the tokens from
 # the sentence.
-
 
 # The interpreter module communicates with the lexer module to retrieve the
 # next token from the sentence self.
 # This class represents the parser, which takes in tokens from the lexer. This
 # Abstract syntax tree is fed to the interpreter which analyzes the tree to get
 # the proper meaning out of it.
+
 class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
@@ -227,18 +310,22 @@ class Parser:
     # Defining the term which is part of an expression.
     def term(self):
         node = self.factor()
-        while self.current_token.type in (MUL, DIV):
+        while self.current_token.type in (MUL, INTEGER_DIV, FLOAT_DIV):
             token = self.current_token
             if(token.type == MUL):
                 self.eat(MUL)
-            if(token.type == DIV):
-                self.eat(DIV)
+            if(token.type == INTEGER_DIV):
+                self.eat(INTEGER_DIV)
+            if(token.type == FLOAT_DIV):
+                self.eat(FLOAT_DIV)
+            # Creating a node of the term.
             node = BinOp(left=node, op=token, right=self.factor())
         return node
 
     # This method defines a factor which is a non terminating token.
     def factor(self):
         token = self.current_token
+        print("Printing the testing token type ", token.type)
         if token.type == PLUS:
             self.eat(PLUS)
             node = UnaryOp(token, self.factor())
@@ -247,8 +334,13 @@ class Parser:
             self.eat(MINUS)
             node = UnaryOp(token, self.factor())
             return node
-        if token.type == INTEGER:
-            self.eat(INTEGER)
+        # Adding the integer constant datatype to the parser.
+        if token.type == INTEGER_CONST:
+            self.eat(INTEGER_CONST)
+            return Num(token)
+        # Adding the real constant data type to the parser.
+        if token.type == REAL_CONST:
+            self.eat(REAL_CONST)
             return Num(token)
         elif token.type == LPAREN:
             self.eat(LPAREN)
@@ -280,6 +372,7 @@ class Parser:
         '''compound_statement : BEGIN statement_list END'''
         self.eat(BEGIN)
         nodes = self.statement_list()
+        print("compound statement type", self.current_token.type)
         self.eat(END)
         root = Compound()
         for node in nodes:
@@ -301,8 +394,8 @@ class Parser:
     '''Statement : compound_statement| assignement_statement | empty'''
 
     def assignement_statement(self):
-        if(self.current_token.value == 'PRINT'):
-            self.eat
+        #if(self.current_token.value == 'PRINT'):
+        #    self.eat
         left = self.variable()
         token = self.current_token
         self.eat(ASSIGN)
@@ -329,25 +422,73 @@ class Parser:
     def empty(self):
         '''An empty production.'''
         return NoOp()
+
     # This returns the main node which is the entry point in to the
     # abstarct syntax tree.
     def program(self):
-        node = self.compound_statement()
+        self.eat(PROGRAM)
+        var_node = self.variable()
+        self.eat(SEMI)
+        prog_name = var_node.value
+        block_node = self.block()
+        program_node = Program(prog_name, block_node)
         self.eat(DOT)
-        return node
+        return program_node
 
     # parse method for the parser that parses the text in to AST.
     def parse(self):
         return self.program()
 
+    # parse methof for the block.
+    def block(self):
+        declaration_nodes = self.declarations()
+        compound_statement = self.compound_statement()
+        node = Block(declaration_nodes, compound_statement)
+        return node
 
-###
+    # This method contains the bunch of variable declarations which constitute
+    # a big declaration of the program.
+    def declarations(self):
+        '''declarations: VAR(variable_declaraion SEMI)+ | EMPTY'''
+        declarations = []
+        if self.current_token.type == VAR:
+            self.eat(VAR)
+            while self.current_token.type == ID:
+                var_decl = self.variable_declaration()
+                declarations.extend(var_decl)
+                self.eat(SEMI)
+        return declarations
+
+    # This method contains the grammar rules for variable declaration.
+    def variable_declaration(self):
+        var_nodes = [Var(self.current_token)]
+        self.eat(ID)
+        while self.current_token.type == COMMA:
+            self.eat(COMMA)
+            var_nodes.append(Var(self.current_token))
+            self.eat(ID)
+        self.eat(COLON)
+
+        type_node = self.type_spec()
+        var_declarations = [VarDecl(var_node, type_node) for var_node in var_nodes]
+        return var_declarations
+
+    # This method return the type specification of the variable.
+    def type_spec(self):
+        token = self.current_token
+        if token.type == INTEGER:
+            self.eat(INTEGER)
+        if token.type == REAL:
+            self.eat(REAL)
+        node = Type(token)
+        return node
 # Interpreter: The code for the interpreter.
 # input : AST
 # output : value of the syntax tree.
 ###
 class NodeVisitor:
     def visit(self, node):
+        print(" Type of the visited node: ", type(node))
         method_name = 'visit_' + type(node).__name__
         visitor = getattr(self, method_name, self.generic_visit)
         return visitor(node)
@@ -375,7 +516,11 @@ class Interpreter(NodeVisitor):
             return self.visit(node.left) - self.visit(node.right)
         if node.op.type == MUL:
             return self.visit(node.left) * self.visit(node.right)
-        if node.op.type == DIV:
+
+        # Added INTEGER_DIV and FLOAT_DIV for integer and float division.
+        if node.op.type == INTEGER_DIV:
+            return self.visit(node.left)//self.visit(node.right)
+        if node.op.type == FLOAT_DIV:
             return self.visit(node.left)/self.visit(node.right)
 
 # method for visiting the integer numbers.
@@ -417,6 +562,19 @@ class Interpreter(NodeVisitor):
         else:
             raise NameError(repr(var_name))
 
+    def visit_Program(self, node):
+        self.visit(node.block)
+
+    # Interpreter visits the block node of the AST.
+    def visit_Block(self, node):
+        for declaration in node.declarations:
+            self.visit(declaration)
+        self.visit(node.compound_statement)
+
+    def visit_VarDecl(self, node):
+        pass
+    def visit_Type(self, node):
+        pass
 # method for interpreter.
     def interpret(self):
         tree = self.parser.parse()
@@ -428,16 +586,8 @@ def main():
     #while True:
     text = ""
     while True:
-        command = input("sand>")
+        fileName = input("sand>")
         text = ""
-        if(command == 'exit'):
-            exit(0)
-        vars = command.split(" ")
-        program_name = vars[0]
-        fileName = vars[1]
-        if(program_name != "sand"):
-            print(program_name, "doesn't exist")
-            continue
         # try:
         file_handler = open(fileName)
         for line in file_handler:
